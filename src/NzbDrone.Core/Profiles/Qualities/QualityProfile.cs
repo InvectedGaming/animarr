@@ -92,5 +92,23 @@ namespace NzbDrone.Core.Profiles.Qualities
         {
             return FormatItems.Where(x => formats.Contains(x.Format)).Sum(x => x.Score);
         }
+
+        // Custom formats whose name starts with this prefix make up the language score.
+        // The language score outranks quality when choosing and upgrading releases.
+        public const string LanguageFormatPrefix = "[Lang]";
+
+        public int CalculateLanguageScore(List<CustomFormat> formats)
+        {
+            if (formats == null)
+            {
+                return 0;
+            }
+
+            return FormatItems
+                .Where(x => x.Format?.Name != null &&
+                            x.Format.Name.StartsWith(LanguageFormatPrefix, System.StringComparison.OrdinalIgnoreCase) &&
+                            formats.Contains(x.Format))
+                .Sum(x => x.Score);
+        }
     }
 }

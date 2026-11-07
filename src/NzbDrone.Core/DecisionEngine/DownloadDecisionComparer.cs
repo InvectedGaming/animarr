@@ -31,6 +31,7 @@ namespace NzbDrone.Core.DecisionEngine
         {
             var comparers = new List<CompareDelegate>
             {
+                CompareLanguageScore,
                 CompareQuality,
                 CompareCustomFormatScore,
                 CompareProtocol,
@@ -68,6 +69,11 @@ namespace NzbDrone.Core.DecisionEngine
         private int CompareIndexerPriority(DownloadDecision x, DownloadDecision y)
         {
             return CompareByReverse(x.RemoteEpisode.Release, y.RemoteEpisode.Release, release => release.IndexerPriority);
+        }
+
+        private int CompareLanguageScore(DownloadDecision x, DownloadDecision y)
+        {
+            return CompareBy(x.RemoteEpisode, y.RemoteEpisode, remoteEpisode => remoteEpisode.Series.QualityProfile.Value.CalculateLanguageScore(remoteEpisode.CustomFormats));
         }
 
         private int CompareQuality(DownloadDecision x, DownloadDecision y)

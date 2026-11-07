@@ -11,6 +11,7 @@ using NzbDrone.Core.DecisionEngine;
 using NzbDrone.Core.Indexers;
 using NzbDrone.Core.Languages;
 using NzbDrone.Core.Parser.Model;
+using NzbDrone.Core.Profiles;
 using NzbDrone.Core.Profiles.Delay;
 using NzbDrone.Core.Profiles.Qualities;
 using NzbDrone.Core.Qualities;
@@ -629,6 +630,40 @@ namespace NzbDrone.Core.Test.DecisionEngineTests
             qualifiedReports.Skip(1).First().RemoteEpisode.Should().Be(remoteEpisode2);
             qualifiedReports.Skip(2).First().RemoteEpisode.Should().Be(remoteEpisode1);
             qualifiedReports.Last().RemoteEpisode.Should().Be(remoteEpisode3);
+        }
+        [Test]
+        public void should_prefer_better_language_score_over_better_quality()
+        {
+            var dual = new NzbDrone.Core.CustomFormats.CustomFormat("[Lang] Dual Audio") { Id = 1 };
+
+            var subBluray = GivenRemoteEpisode(new List<Episode> { GivenEpisode(1) }, new QualityModel(Quality.Bluray1080p), Language.Japanese);
+            var dualWeb = GivenRemoteEpisode(new List<Episode> { GivenEpisode(1) }, new QualityModel(Quality.WEBDL1080p), Language.Japanese);
+
+            var profile = new QualityProfile
+            {
+                Items = Qualities.QualityFixture.GetDefaultQualities(),
+                FormatItems = new List<ProfileFormatItem> { new ProfileFormatItem { Format = dual, Score = 2500 } }
+            };
+            subBluray.Series.QualityProfile = profile;
+            dualWeb.Series.QualityProfile = profile;
+            dualWeb.CustomFormats = new List<NzbDrone.Core.CustomFormats.CustomFormat> { dual };
+
+            var decisions = new List<DownloadDecision> { new DownloadDecision(subBluray), new DownloadDecision(dualWeb) };
+
+            var qualifiedReports = Subject.PrioritizeDecisions(decisions);
+            qualifiedReports.First().RemoteEpisode.Should().Be(dualWeb);
+        }
+
+        [Test]
+        public void should_prefer_better_quality_when_language_scores_are_equal()
+        {
+            var subBluray = GivenRemoteEpisode(new List<Episode> { GivenEpisode(1) }, new QualityModel(Quality.Bluray1080p), Language.Japanese);
+            var subWeb = GivenRemoteEpisode(new List<Episode> { GivenEpisode(1) }, new QualityModel(Quality.WEBDL1080p), Language.Japanese);
+
+            var decisions = new List<DownloadDecision> { new DownloadDecision(subWeb), new DownloadDecision(subBluray) };
+
+            var qualifiedReports = Subject.PrioritizeDecisions(decisions);
+            qualifiedReports.First().RemoteEpisode.Should().Be(subBluray);
         }
     }
 }

@@ -34,6 +34,43 @@ namespace NzbDrone.Core.DecisionEngine.Specifications
             var qualityCompare = qualityComparer.Compare(newQuality?.Quality, currentQuality.Quality);
             var downloadPropersAndRepacks = _configService.DownloadPropersAndRepacks;
 
+            // Language outranks quality: a release with a better language score replaces the
+            // existing file until the custom format cutoff is met, and a release with a worse
+            // language score never replaces it, whatever its quality.
+            var currentLanguageScore = qualityProfile.CalculateLanguageScore(currentCustomFormats);
+            var newLanguageScore = qualityProfile.CalculateLanguageScore(newCustomFormats);
+
+            if (newLanguageScore > currentLanguageScore)
+            {
+                if (!qualityProfile.UpgradeAllowed)
+                {
+                    return UpgradeableRejectReason.UpgradesNotAllowed;
+                }
+
+                if (!CustomFormatCutoffNotMet(qualityProfile, currentCustomFormats))
+                {
+                    _logger.Debug("Existing item meets cut-off for custom formats, skipping language upgrade. Existing: [{0}]", currentCustomFormats.ConcatToString());
+                    return UpgradeableRejectReason.CustomFormatCutoff;
+                }
+
+                _logger.Debug("New item has a better language score ({0} vs {1}). Existing: [{2}]. New: [{3}]",
+                    newLanguageScore,
+                    currentLanguageScore,
+                    currentCustomFormats.ConcatToString(),
+                    newCustomFormats.ConcatToString());
+                return UpgradeableRejectReason.None;
+            }
+
+            if (newLanguageScore < currentLanguageScore)
+            {
+                _logger.Debug("Existing item has a better language score ({0} vs {1}), skipping. Existing: [{2}]. New: [{3}]",
+                    currentLanguageScore,
+                    newLanguageScore,
+                    currentCustomFormats.ConcatToString(),
+                    newCustomFormats.ConcatToString());
+                return UpgradeableRejectReason.CustomFormatScore;
+            }
+
             if (qualityCompare > 0 && QualityCutoffNotMet(qualityProfile, currentQuality, newQuality))
             {
                 _logger.Debug("New item has a better quality. Existing: {0}. New: {1}", currentQuality, newQuality);

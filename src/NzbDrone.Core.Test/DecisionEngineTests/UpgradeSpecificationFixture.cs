@@ -237,5 +237,105 @@ namespace NzbDrone.Core.Test.DecisionEngineTests
                     new List<CustomFormat> { customFormatTwo })
                 .Should().Be(UpgradeableRejectReason.None);
         }
+        private static QualityProfile LanguageProfile(CustomFormat dual, CustomFormat dub, int cutoffFormatScore = 1000, bool upgradeAllowed = true)
+        {
+            return new QualityProfile
+            {
+                Items = Qualities.QualityFixture.GetDefaultQualities(),
+                UpgradeAllowed = upgradeAllowed,
+                MinUpgradeFormatScore = 1,
+                CutoffFormatScore = cutoffFormatScore,
+                FormatItems = new List<ProfileFormatItem>
+                {
+                    new ProfileFormatItem { Format = dual, Score = 2500 },
+                    new ProfileFormatItem { Format = dub, Score = 1400 }
+                }
+            };
+        }
+
+        [Test]
+        public void language_upgrade_beats_a_lower_quality_new_release()
+        {
+            GivenAutoDownloadPropers(ProperDownloadTypes.PreferAndUpgrade);
+            var dual = new CustomFormat("[Lang] Dual Audio") { Id = 1 };
+            var dub = new CustomFormat("[Lang] English Dub") { Id = 2 };
+            var profile = LanguageProfile(dual, dub);
+
+            // Sub-only Bluray on disk, dual-audio WEB-DL available: language wins over quality.
+            Subject.IsUpgradable(
+                    profile,
+                    new QualityModel(Quality.Bluray1080p),
+                    new List<CustomFormat>(),
+                    new QualityModel(Quality.WEBDL1080p),
+                    new List<CustomFormat> { dual })
+                .Should().Be(UpgradeableRejectReason.None);
+        }
+
+        [Test]
+        public void language_downgrade_is_rejected_even_when_quality_is_better()
+        {
+            GivenAutoDownloadPropers(ProperDownloadTypes.PreferAndUpgrade);
+            var dual = new CustomFormat("[Lang] Dual Audio") { Id = 1 };
+            var dub = new CustomFormat("[Lang] English Dub") { Id = 2 };
+            var profile = LanguageProfile(dual, dub);
+
+            Subject.IsUpgradable(
+                    profile,
+                    new QualityModel(Quality.WEBDL1080p),
+                    new List<CustomFormat> { dual },
+                    new QualityModel(Quality.Bluray1080p),
+                    new List<CustomFormat>())
+                .Should().Be(UpgradeableRejectReason.CustomFormatScore);
+        }
+
+        [Test]
+        public void language_upgrade_stops_once_custom_format_cutoff_is_met()
+        {
+            GivenAutoDownloadPropers(ProperDownloadTypes.PreferAndUpgrade);
+            var dual = new CustomFormat("[Lang] Dual Audio") { Id = 1 };
+            var dub = new CustomFormat("[Lang] English Dub") { Id = 2 };
+            var profile = LanguageProfile(dual, dub, cutoffFormatScore: 1000);
+
+            // Existing English dub (1400) already meets the 1000 cutoff, so no swap to dual audio.
+            Subject.IsUpgradable(
+                    profile,
+                    new QualityModel(Quality.WEBDL1080p),
+                    new List<CustomFormat> { dub },
+                    new QualityModel(Quality.WEBDL1080p),
+                    new List<CustomFormat> { dual })
+                .Should().Be(UpgradeableRejectReason.CustomFormatCutoff);
+        }
+
+        [Test]
+        public void language_upgrade_is_rejected_when_profile_does_not_allow_upgrades()
+        {
+            GivenAutoDownloadPropers(ProperDownloadTypes.PreferAndUpgrade);
+            var dual = new CustomFormat("[Lang] Dual Audio") { Id = 1 };
+            var dub = new CustomFormat("[Lang] English Dub") { Id = 2 };
+            var profile = LanguageProfile(dual, dub, upgradeAllowed: false);
+
+            Subject.IsUpgradable(
+                    profile,
+                    new QualityModel(Quality.WEBDL1080p),
+                    new List<CustomFormat>(),
+                    new QualityModel(Quality.WEBDL1080p),
+                    new List<CustomFormat> { dual })
+                .Should().Be(UpgradeableRejectReason.UpgradesNotAllowed);
+        }
+
+        [Test]
+        public void formats_without_the_language_prefix_do_not_count_as_language()
+        {
+            GivenAutoDownloadPropers(ProperDownloadTypes.PreferAndUpgrade);
+            var tier = new CustomFormat("Anime BD Tier 01") { Id = 3 };
+            var profile = new QualityProfile
+            {
+                Items = Qualities.QualityFixture.GetDefaultQualities(),
+                UpgradeAllowed = true,
+                FormatItems = new List<ProfileFormatItem> { new ProfileFormatItem { Format = tier, Score = 1400 } }
+            };
+
+            profile.CalculateLanguageScore(new List<CustomFormat> { tier }).Should().Be(0);
+        }
     }
 }
